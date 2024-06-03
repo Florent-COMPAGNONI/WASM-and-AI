@@ -1,0 +1,39 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WASM Linear Regression</title>
+</head>
+<body>
+    <h1>Linear Regression with WASM</h1>
+    <script type="module">
+        console.log('Loading WASM module...');
+        import init, { LinearModel } from './pkg/wasm_ia.js';
+
+        async function run() {
+            await init();
+
+            // Exemple de données de formation
+            const data = [
+                { x: 1.0, y: 2.0 },
+                { x: 2.0, y: 3.0 },
+                { x: 3.0, y: 4.0 },
+                { x: 4.0, y: 5.0 },
+            ];
+
+            const model = new LinearModel();
+            await model.train(data);
+
+            const prediction = model.predict(5.0);
+            console.log(`Prediction for x=5.0: ${prediction}`);
+
+            const coefficients = await model.coefficients();
+            console.log(`Model coefficients: ${coefficients}`);
+        }
+
+        run();
+    </script>
+</body>
+</html>
