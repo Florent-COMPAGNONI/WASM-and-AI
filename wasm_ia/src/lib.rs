@@ -5,6 +5,8 @@ use linreg::linear_regression;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 
+pub mod mlp;
+
 // Définition de la structure des données pour les points de données.
 #[derive(Serialize, Deserialize)]
 struct DataPoint {
