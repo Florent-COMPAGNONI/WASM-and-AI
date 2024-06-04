@@ -139,45 +139,16 @@ fn predict_mlp(model: &mut MLP, sample_input: &Vec<f64>, is_classification: i32)
 }
 
 
-#[no_mangle]
-pub extern "C" fn wrap_predict(model_ptr: *mut MLP, input_ptr: *const f64, input_length: i32, is_classification: i32) -> *mut f64 {
-
-    let model: &mut MLP = unsafe{ &mut *model_ptr.as_mut().unwrap() };
-
-    let inputs: &[f64] = unsafe {
-        std::slice::from_raw_parts(input_ptr, input_length as usize)
-    };
-
-    let prediction: Vec<f64> = predict_mlp(model, &inputs.to_vec(), is_classification);
-
-    return prediction.leak().as_mut_ptr();
-}
-
-
 // TODO output is a matrix ...
 #[no_mangle]
-pub extern "C" fn train_mlp(model_ptr: *mut MLP,
-                            inputs_ptr: *const f64, inputs_length: i32, inputs_sublength: i32,
-                            expected_outputs_ptr: *const f64, expected_outputs_length: i32, expected_outputs_sublength: i32,
-                            is_classification: i32, learning_rate: f64, nb_iter: i32, epoch: i32)
+fn train_mlp(model: &mut MLP,
+            inputs: &Vec<Vec<f64>>, expected_outputs:&Vec<Vec<f64>>, is_classification: i32, 
+            learning_rate: f64, nb_iter: i32, epoch: i32)
 {
 
     // convert from raw part
-    // TODO match Some / None
-    let model: &mut MLP = unsafe{ &mut *model_ptr.as_mut().unwrap() };
     model.learning_rate = learning_rate;
     model.nb_iter = nb_iter;
-
-    let tmp_inputs: &[f64] = unsafe {
-        std::slice::from_raw_parts(inputs_ptr, inputs_length as usize)
-    };
-    let inputs: Vec<Vec<f64>> = array_to_matrix(tmp_inputs, inputs_sublength as usize);
-
-    let tmp_excepted_outputs: &[f64] = unsafe {
-        std::slice::from_raw_parts(expected_outputs_ptr, expected_outputs_length as usize)
-    };
-    // TODO expected output can be a matrix ???!!!
-    let excepted_outputs: Vec<Vec<f64>> = array_to_matrix(tmp_excepted_outputs, expected_outputs_sublength as usize);
 
     // reset logs
     model.logs = Vec::new();
@@ -191,7 +162,7 @@ pub extern "C" fn train_mlp(model_ptr: *mut MLP,
         let random_index = rng.gen_range(0..inputs.len());
 
         let sample_input: &Vec<f64> = &inputs[random_index];
-        let sample_expected_output: &Vec<f64> = &excepted_outputs[random_index];
+        let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
         // update the inputs of each layers via predict func + store current iter error
         let current_error: Vec<f64> =  predict_mlp(model, sample_input, is_classification);
@@ -253,17 +224,7 @@ fn serialize_logs(model: &mut MLP, epoch: i32) {
 }
 
 
-#[no_mangle]
-pub extern "C" fn wrap_serialize_logs(model_ptr: *mut MLP, epoch: i32) {
-
-    // TODO match Some / None
-    let model: &mut MLP = unsafe{ &mut *model_ptr.as_mut().unwrap() };
-
-    serialize_logs(model, epoch);
-}
-
-
-fn format_model_infos(model: &mut MLP) -> String {
+fn format_model_infos(model: &MLP) -> String {
 
     let mut infos: String = "layers;".to_owned();
 
@@ -277,17 +238,8 @@ fn format_model_infos(model: &mut MLP) -> String {
 }
 
 
-#[no_mangle]
-pub extern "C" fn wrap_serialize_model(model_ptr: *mut MLP) {
 
-    // TODO match Some / None
-    let model: &mut MLP = unsafe{ &mut *model_ptr.as_mut().unwrap() };
-
-    serialize_model(model);
-}
-
-
-fn serialize_model(model: &mut MLP) {
+fn serialize_model(model: &MLP) {
 
     let now: DateTime<Local> = Local::now();
 
@@ -302,7 +254,7 @@ fn serialize_model(model: &mut MLP) {
 
     let mut output: File = File::create(path).expect("failed to create file");
 
-    let mut model_infos: String = format_model_infos(model);
+    let model_infos: String = format_model_infos(model);
 
     write!(output, "{}", model_infos).expect("failed to write");
 
@@ -317,34 +269,6 @@ fn serialize_model(model: &mut MLP) {
 }
 
 
-#[no_mangle]
-pub extern "C" fn free_mlp(model: *mut MLP) {
-    unsafe {
-        Box::from_raw(model);
-    }
-}
-
-
-// TODO test
-#[no_mangle]
-pub extern "C" fn free_f64_array(tab: *mut f64, tab_size: i32) {
-    unsafe {
-        Vec::from_raw_parts(tab, tab_size as usize, tab_size as usize);
-    }
-}
-
-
-
-
-// tmp
-
-#[no_mangle]
-pub extern "C" fn display_mlp_raw_ptr(model: *const MLP) {
-
-    // TODO match Some / None
-    let model_safe = unsafe{ &*model.as_ref().unwrap() };
-    display_mlp(model_safe);
-}
 
 
 fn display_mlp(model: &MLP) {
@@ -363,43 +287,10 @@ fn display_mlp(model: &MLP) {
 }
 
 
-#[no_mangle]
-pub extern "C" fn test_i32_to_f64(x: f64) {
-
-    println!("{}", x);
-}
-
-
-#[no_mangle]
-pub extern "C" fn test_array_return() -> *mut i32 {
-
-    let arr = vec![1,2,3,4];
-
-    return arr.leak().as_mut_ptr();
-}
-
-#[no_mangle]
-pub extern "C" fn test_matrix_return() -> *mut *mut i32 {
-
-    let arr = vec![
-        vec![0,0],
-        vec![1,1],
-    ];
-
-    let mut result: Vec<*mut i32> = Vec::with_capacity(2);
-
-    for i in arr {
-        result.push(i.leak().as_mut_ptr());
-    }
-
-    return result.leak().as_mut_ptr();
-}
-
-
-
 #[cfg(test)]
 mod tests {
-    use crate::mlp::create_mlp;
+    use crate::mlp::{create_mlp, predict_mlp, train_mlp};
+
     // use std::collections::HashMap;
     // use chrono::{Datelike, Local, Timelike, Utc};
 
@@ -474,6 +365,9 @@ mod tests {
             vec![1.],
             vec![0.],
         ];
+
+        dbg!("{:?}",predict_mlp(&mut model, &inputs[0], 1)); 
+        train_mlp(&mut model, &inputs, &expected_outputs, 1, 0.1, 1000, 0);
 
     }
 }
