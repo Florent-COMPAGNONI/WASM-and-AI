@@ -53,9 +53,9 @@ fn init_weights(layers: &Vec<i32>) -> Vec<Vec<Vec<f64>>> {
 
 
 #[wasm_bindgen]
-pub fn create_mlp(layers: JsValue) -> JsValue {
+pub fn create_mlp(layers_js: JsValue) -> JsValue {
 
-    let layers: Vec<i32> = from_value(layers).unwrap();
+    let layers: Vec<i32> = from_value(layers_js).unwrap();
     // init weights randomly
     let weights: Vec<Vec<Vec<f64>>> = init_weights(&layers);
 
@@ -90,23 +90,11 @@ pub fn create_mlp(layers: JsValue) -> JsValue {
 }
 
 
-// TODO generic type ?
-fn array_to_matrix(array: &[f64], sub_array_length: usize) -> Vec<Vec<f64>> {
+#[wasm_bindgen]
+pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classification: i32) -> JsValue{
 
-    let rows = array.len() / sub_array_length as usize;
-    let mut matrix: Vec<Vec<f64>> = vec![vec![0.; sub_array_length]; rows];
-
-    for i in 0..rows {
-        for j in 0..sub_array_length {
-            let index = i * sub_array_length  + j;
-            matrix[i][j] = array[index];
-        }
-    }
-    return matrix;
-}
-
-
-fn predict_mlp(model: &mut MLP, sample_input: &Vec<f64>, is_classification: i32) -> Vec<f64>{
+    let mut model: MLP = from_value(model_js).unwrap();
+    let sample_input: Vec<f64> = from_value(sample_input_js).unwrap();
 
     // entry layer = input
     for i in 0..model.layers[0] as usize {
@@ -128,16 +116,17 @@ fn predict_mlp(model: &mut MLP, sample_input: &Vec<f64>, is_classification: i32)
             model.inputs[l][j] = total;
         }
     }
-    return model.inputs[(model.nb_layers) as usize][1..].to_vec();
+    return to_value(&model.inputs[(model.nb_layers) as usize][1..].to_vec()).unwrap()
 }
 
 
 // TODO output is a matrix ...
-#[no_mangle]
-fn train_mlp(model: &mut MLP,
-            inputs: &Vec<Vec<f64>>, expected_outputs:&Vec<Vec<f64>>, is_classification: i32, 
-            learning_rate: f64, nb_iter: i32, epoch: i32)
+#[wasm_bindgen]
+pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsValue, is_classification: i32, learning_rate: f64, nb_iter: i32, epoch: i32)
 {
+    let mut model: MLP = from_value(model_js).unwrap();
+    let inputs: Vec<Vec<f64>> = from_value(inputs_js).unwrap();
+    let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).unwrap();
 
     // convert from raw part
     model.learning_rate = learning_rate;
@@ -158,7 +147,7 @@ fn train_mlp(model: &mut MLP,
         let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
         // update the inputs of each layers via predict func + store current iter error
-        let current_error: Vec<f64> =  predict_mlp(model, sample_input, is_classification);
+        let current_error: Vec<f64> =  from_value(predict_mlp(to_value(&model).unwrap(), to_value(sample_input).unwrap(), is_classification)).unwrap();
 
         model.logs.push(current_error);
         model.logs.push((*sample_expected_output.clone()).to_owned());
