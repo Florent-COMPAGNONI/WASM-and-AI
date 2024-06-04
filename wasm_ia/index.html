@@ -10,27 +10,30 @@
     <h1>Linear Regression with WASM</h1>
     <script type="module">
         console.log('Loading WASM module...');
-        import init, { LinearModel } from './pkg/wasm_ia.js';
+        import init, { create_mlp, predict_mlp, train_mlp } from './pkg/wasm_ia.js';
 
         async function run() {
             await init();
 
-            // Exemple de données de formation
-            const data = [
-                { x: 1.0, y: 2.0 },
-                { x: 2.0, y: 3.0 },
-                { x: 3.0, y: 4.0 },
-                { x: 4.0, y: 5.0 },
+            let layers = [2, 3, 1];
+            let model = create_mlp(layers);
+
+            let inputs = [
+                [0.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [1.0, 1.0]
             ];
 
-            const model = new LinearModel();
-            await model.train(data);
+            let expected_outputs = [
+                [0.0],
+                [1.0],
+                [1.0],
+                [0.0]
+            ];
 
-            const prediction = model.predict(5.0);
-            console.log(`Prediction for x=5.0: ${prediction}`);
-
-            const coefficients = await model.coefficients();
-            console.log(`Model coefficients: ${coefficients}`);
+            console.log(await predict_mlp(model, inputs[0], 1));
+            model = await train_mlp(model, inputs, expected_outputs, 1, 0.1, 1000);
         }
 
         run();
