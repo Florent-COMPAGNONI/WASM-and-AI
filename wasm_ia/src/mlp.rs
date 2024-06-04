@@ -368,6 +368,6 @@ mod tests {
 
         dbg!("{:?}",predict_mlp(&mut model, &inputs[0], 1)); 
         train_mlp(&mut model, &inputs, &expected_outputs, 1, 0.1, 1000, 0);
-
+        
     }
 }
