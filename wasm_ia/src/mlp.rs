@@ -1,19 +1,9 @@
 use rand::Rng;
-use std::io::{Write, BufReader, BufRead, Error};
+use std::io::Write;
 use std::fs::File;
-use chrono::{Datelike, DateTime, Local, Timelike, Utc};
-
-// tmp
-use std::any::type_name;
+use chrono::{Datelike, DateTime, Local, Timelike};
 
 
-
-fn type_of<T>(_: T) -> &'static str { 
-    type_name::<T>()
-}
-
-
-#[repr(C)]
 #[derive(Debug)]
 pub struct MLP {
     layers: Vec<i32>,
@@ -368,6 +358,6 @@ mod tests {
 
         dbg!("{:?}",predict_mlp(&mut model, &inputs[0], 1)); 
         train_mlp(&mut model, &inputs, &expected_outputs, 1, 0.1, 1000, 0);
-        
+
     }
 }
