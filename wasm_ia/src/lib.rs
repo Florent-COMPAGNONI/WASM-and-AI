@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 
 pub mod mlp;
+pub mod tmp;
 
 // Définition de la structure des données pour les points de données.
 #[derive(Serialize, Deserialize)]

@@ -6,6 +6,7 @@ use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 
+
 #[wasm_bindgen]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MLP {
@@ -220,7 +221,6 @@ fn format_model_infos(model: &MLP) -> String {
 }
 
 
-
 fn serialize_model(model: &MLP) {
 
     let now: DateTime<Local> = Local::now();
@@ -251,8 +251,6 @@ fn serialize_model(model: &MLP) {
 }
 
 
-
-
 fn display_mlp(model: &MLP) {
 
     println!("nb of layer: {}\n", model.nb_layers);
@@ -267,6 +265,9 @@ fn display_mlp(model: &MLP) {
 
     // println!("logs: \n{:?}\n", model.logs);
 }
+
+
+
 
 
 #[cfg(test)]
