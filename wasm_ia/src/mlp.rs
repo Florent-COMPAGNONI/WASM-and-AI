@@ -6,14 +6,20 @@ use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
 use wasm_bindgen_futures::future_to_promise;
-use wasm_bindgen_futures::js_sys::Promise;
+use wasm_bindgen_futures::js_sys::{Function, Promise};
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen::prelude::*;
+
+use wasm_bindgen::JsCast;
+use web_sys::window;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[wasm_bindgen]
 extern "C" {
     /* This code declare JS function to be called from Rust */
-    fn update_page(message: &str);
+    fn update_loss(epoch: i32, iter: i32, loss: f64);
+    fn set_timeout(f: &Function, delay: u32) -> i32;
 }
 
 
@@ -30,6 +36,17 @@ pub struct MLP {
     nb_iter: i32,
 }
 
+
+struct TrainState {
+    model: MLP,
+    inputs: Vec<Vec<f64>>,
+    expected_outputs: Vec<Vec<f64>>,
+    is_classification: i32,
+    learning_rate: f64,
+    nb_iter: i32,
+    epoch: i32,
+    current_iter: i32,
+}
 
 fn init_weights(layers: &Vec<i32>) -> Vec<Vec<Vec<f64>>> {
 
@@ -133,85 +150,95 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
 
 // TODO output is a matrix ...
 #[wasm_bindgen]
-pub fn train_mlp(
-    model_js: JsValue, 
-    inputs_js: JsValue, 
-    expected_outputs_js: JsValue, 
-    is_classification: i32, 
-    learning_rate: f64, 
-    nb_iter: i32, 
-    epoch: i32
-) -> Promise {
-    future_to_promise(async move {
-        let mut model: MLP = from_value(model_js).unwrap();
-        let inputs: Vec<Vec<f64>> = from_value(inputs_js).unwrap();
-        let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).unwrap();
+pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsValue, is_classification: i32, learning_rate: f64, nb_iter: i32, epoch: i32)
+{
+    let mut model: MLP = from_value(model_js).unwrap();
+    let inputs: Vec<Vec<f64>> = from_value(inputs_js).unwrap();
+    let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).unwrap();
 
-        // convert from raw part
-        model.learning_rate = learning_rate;
-        model.nb_iter = nb_iter;
+    // convert from raw part
+    model.learning_rate = learning_rate;
+    model.nb_iter = nb_iter;
 
-        // reset logs
-        model.logs = Vec::new();
+    // reset logs
+    model.logs = Vec::new();
 
-        // let start_time = Utc::now().time();
+    // let start_time = Utc::now().time();
 
-        for i in 0..model.nb_iter {
+    let state = Rc::new(RefCell::new(TrainState {
+        model,
+        inputs,
+        expected_outputs,
+        is_classification,
+        learning_rate,
+        nb_iter,
+        epoch,
+        current_iter: 0,
+    }));
 
-            // random choice of an input, and of the expected output linked to it
-            let mut rng = rand::thread_rng();
-            let random_index = rng.gen_range(0..inputs.len());
+    let closure: Rc<RefCell<Option<Closure<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let closure_clone = closure.clone();
 
-            let sample_input: &Vec<f64> = &inputs[random_index];
-            let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
-
-            // update the inputs of each layers via predict func + store current iter error
-            let current_error: Vec<f64> =  from_value(predict_mlp(to_value(&model).unwrap(), to_value(sample_input).unwrap(), is_classification)).unwrap();
-
-            model.logs.push(current_error);
-            model.logs.push((*sample_expected_output.clone()).to_owned());
+    *closure.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        let mut state = state.borrow_mut();
 
 
-            // calculate semi gradient for the last layers
-            for i in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
-                let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][i] - sample_expected_output[i - 1];
-
-                if is_classification == 1 {
-                    semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][i].powi(2);
-                }
-                model.deltas[(model.nb_layers) as usize][i] = semi_gradient;
-            }
-
-            // backpropagation of semi gradient (from before last to second layer)
-            for l in (1..(model.nb_layers + 1) as usize).rev() {
-                for i in 1..(model.layers[l - 1] + 1) as usize {
-
-                    // weighted sum calculation
-                    let mut total: f64 = 0.;
-                    for j in 1..(model.layers[l] + 1) as usize {
-                        total += model.weights[l][i][j] * model.deltas[l][j];
-                    }
-
-                    let semi_gradient = total * (1. - model.inputs[l - 1][i].powi(2));
-                    model.deltas[l - 1][i] = semi_gradient;
-                }
-            }
-
-            // update weights using learning rate, inputs and semi_gradients
-            for l in 1..(model.nb_layers + 1) as usize {
-                for i in 0..(model.layers[l - 1] + 1) as usize {
-                    for j in 0..(model.layers[l] + 1) as usize {
-                        model.weights[l][i][j] -= model.learning_rate * model.inputs[l - 1][i] * model.deltas[l][j];
-                    }
-                }
-            }
-            // println!("epoch : {:05} - iter: {:07}", epoch, i);
-            let message = format!("epoch : {:05} - iter: {:07}", epoch, i);
-            update_page(&message);
-            JsFuture::from(Promise::resolve(&JsValue::UNDEFINED)).await?;
+        if state.current_iter >= state.nb_iter {
+            return;
         }
-        Ok(JsValue::UNDEFINED)
-    })
+
+        let mut rng = rand::thread_rng();
+        let random_index = rng.gen_range(0..state.inputs.len());
+
+        let sample_input = &state.inputs[random_index];
+        let sample_expected_output = &state.expected_outputs[random_index];
+
+        let current_error: Vec<f64> = from_value(predict_mlp(to_value(&state.model).unwrap(), to_value(sample_input).unwrap(), state.is_classification)).unwrap();
+
+        state.model.logs.push(current_error.clone());
+        state.model.logs.push(sample_expected_output.clone());
+
+        for i in 1..(state.model.layers[(state.model.nb_layers) as usize] + 1) as usize {
+            let mut semi_gradient: f64 = state.model.inputs[(state.model.nb_layers) as usize][i] - sample_expected_output[i - 1];
+
+            if state.is_classification == 1 {
+                semi_gradient *= 1. - state.model.inputs[(state.model.nb_layers) as usize][i].powi(2);
+            }
+            state.model.deltas[(state.model.nb_layers) as usize][i] = semi_gradient;
+        }
+
+        for l in (1..(state.model.nb_layers + 1) as usize).rev() {
+            for i in 1..(state.model.layers[l - 1] + 1) as usize {
+                let mut total: f64 = 0.;
+                for j in 1..(state.model.layers[l] + 1) as usize {
+                    total += state.model.weights[l][i][j] * state.model.deltas[l][j];
+                }
+
+                let semi_gradient = total * (1. - state.model.inputs[l - 1][i].powi(2));
+                state.model.deltas[l - 1][i] = semi_gradient;
+            }
+        }
+
+        for l in 1..(state.model.nb_layers + 1) as usize {
+            for i in 0..(state.model.layers[l - 1] + 1) as usize {
+                for j in 0..(state.model.layers[l] + 1) as usize {
+                    state.model.weights[l][i][j] -= state.model.learning_rate * state.model.inputs[l - 1][i] * state.model.deltas[l][j];
+                }
+            }
+        }
+
+        if state.current_iter % state.epoch == 0 {
+            let loss: f64 = current_error.iter().sum::<f64>() / current_error.len() as f64;
+            update_loss(state.epoch, state.current_iter, loss);
+        }
+
+        state.current_iter += 1;
+
+        set_timeout(closure_clone.borrow().as_ref().unwrap().as_ref().unchecked_ref(), 0);
+    }) as Box<dyn Fn()>));
+
+    set_timeout(closure.borrow().as_ref().unwrap().as_ref().unchecked_ref(), 0);
+    closure.borrow().as_ref().unwrap().forget();
 }
 
 

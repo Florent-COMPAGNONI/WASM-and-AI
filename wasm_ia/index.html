@@ -11,42 +11,33 @@
     <div id="output"></div>
     <script type="module">
         console.log('Loading WASM module...');
-        // import init, { create_mlp, predict_mlp, train_mlp } from './pkg/wasm_ia.js';
-
-        // async function run() {
-        //     await init();
-
-        //     let layers = [2, 3, 1];
-        //     let model = create_mlp(layers);
-
-        //     let inputs = [
-        //         [0.0, 0.0],
-        //         [0.0, 1.0],
-        //         [1.0, 0.0],
-        //         [1.0, 1.0]
-        //     ];
-
-        //     let expected_outputs = [
-        //         [0.0],
-        //         [1.0],
-        //         [1.0],
-        //         [0.0]
-        //     ];
-
-        //     console.log(await predict_mlp(model, inputs[0], 1));
-        //     model = await train_mlp(model, inputs, expected_outputs, 1, 0.1, 1000);
-        // }
-
-        // run();
-
-        import init, { run_loop } from './pkg/wasm_ia.js';
+        import init, { create_mlp, predict_mlp, train_mlp } from './pkg/wasm_ia.js';
 
         async function run() {
             await init();
-            await run_loop(1000, 10);
+
+            let layers = [2, 3, 1];
+            let model = create_mlp(layers);
+
+            let inputs = [
+                [0.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [1.0, 1.0]
+            ];
+
+            let expected_outputs = [
+                [0.0],
+                [1.0],
+                [1.0],
+                [0.0]
+            ];
+
+            console.log(await predict_mlp(model, inputs[0], 1));
+            model = await train_mlp(model, inputs, expected_outputs, 1, 0.1, 5000);
         }
 
-        run();
+
 
         // Redirect update_page to a function
         window.update_page = (message) => {
@@ -55,6 +46,18 @@
             p.textContent = message;
             output.appendChild(p);
         };
+
+        document.addEventListener('DOMContentLoaded', (event) => {
+            window.update_loss = (epoch, iter, loss) => {
+                const output = document.getElementById('output');
+                const p = document.createElement('p');
+                p.textContent = `Epoch: ${epoch}, Iteration: ${iter}, Loss: ${loss}`;
+                output.appendChild(p);
+                console.log(p.textContent)
+            };
+
+            run();
+        });
     </script>
 </body>
 </html>
