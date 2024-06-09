@@ -5,6 +5,16 @@ use chrono::{Datelike, DateTime, Local, Timelike};
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
+use wasm_bindgen_futures::future_to_promise;
+use wasm_bindgen_futures::js_sys::Promise;
+use wasm_bindgen_futures::JsFuture;
+use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+extern "C" {
+    /* This code declare JS function to be called from Rust */
+    fn update_page(message: &str);
+}
 
 
 #[wasm_bindgen]
@@ -123,72 +133,85 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
 
 // TODO output is a matrix ...
 #[wasm_bindgen]
-pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsValue, is_classification: i32, learning_rate: f64, nb_iter: i32, epoch: i32)
-{
-    let mut model: MLP = from_value(model_js).unwrap();
-    let inputs: Vec<Vec<f64>> = from_value(inputs_js).unwrap();
-    let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).unwrap();
+pub fn train_mlp(
+    model_js: JsValue, 
+    inputs_js: JsValue, 
+    expected_outputs_js: JsValue, 
+    is_classification: i32, 
+    learning_rate: f64, 
+    nb_iter: i32, 
+    epoch: i32
+) -> Promise {
+    future_to_promise(async move {
+        let mut model: MLP = from_value(model_js).unwrap();
+        let inputs: Vec<Vec<f64>> = from_value(inputs_js).unwrap();
+        let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).unwrap();
 
-    // convert from raw part
-    model.learning_rate = learning_rate;
-    model.nb_iter = nb_iter;
+        // convert from raw part
+        model.learning_rate = learning_rate;
+        model.nb_iter = nb_iter;
 
-    // reset logs
-    model.logs = Vec::new();
+        // reset logs
+        model.logs = Vec::new();
 
-    // let start_time = Utc::now().time();
+        // let start_time = Utc::now().time();
 
-    for i in 0..model.nb_iter {
+        for i in 0..model.nb_iter {
 
-        // random choice of an input, and of the expected output linked to it
-        let mut rng = rand::thread_rng();
-        let random_index = rng.gen_range(0..inputs.len());
+            // random choice of an input, and of the expected output linked to it
+            let mut rng = rand::thread_rng();
+            let random_index = rng.gen_range(0..inputs.len());
 
-        let sample_input: &Vec<f64> = &inputs[random_index];
-        let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
+            let sample_input: &Vec<f64> = &inputs[random_index];
+            let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
-        // update the inputs of each layers via predict func + store current iter error
-        let current_error: Vec<f64> =  from_value(predict_mlp(to_value(&model).unwrap(), to_value(sample_input).unwrap(), is_classification)).unwrap();
+            // update the inputs of each layers via predict func + store current iter error
+            let current_error: Vec<f64> =  from_value(predict_mlp(to_value(&model).unwrap(), to_value(sample_input).unwrap(), is_classification)).unwrap();
 
-        model.logs.push(current_error);
-        model.logs.push((*sample_expected_output.clone()).to_owned());
+            model.logs.push(current_error);
+            model.logs.push((*sample_expected_output.clone()).to_owned());
 
 
-        // calculate semi gradient for the last layers
-        for i in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
-            let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][i] - sample_expected_output[i - 1];
+            // calculate semi gradient for the last layers
+            for i in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
+                let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][i] - sample_expected_output[i - 1];
 
-            if is_classification == 1 {
-                semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][i].powi(2);
-            }
-            model.deltas[(model.nb_layers) as usize][i] = semi_gradient;
-        }
-
-        // backpropagation of semi gradient (from before last to second layer)
-        for l in (1..(model.nb_layers + 1) as usize).rev() {
-            for i in 1..(model.layers[l - 1] + 1) as usize {
-
-                // weighted sum calculation
-                let mut total: f64 = 0.;
-                for j in 1..(model.layers[l] + 1) as usize {
-                    total += model.weights[l][i][j] * model.deltas[l][j];
+                if is_classification == 1 {
+                    semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][i].powi(2);
                 }
-
-                let semi_gradient = total * (1. - model.inputs[l - 1][i].powi(2));
-                model.deltas[l - 1][i] = semi_gradient;
+                model.deltas[(model.nb_layers) as usize][i] = semi_gradient;
             }
-        }
 
-        // update weights using learning rate, inputs and semi_gradients
-        for l in 1..(model.nb_layers + 1) as usize {
-            for i in 0..(model.layers[l - 1] + 1) as usize {
-                for j in 0..(model.layers[l] + 1) as usize {
-                    model.weights[l][i][j] -= model.learning_rate * model.inputs[l - 1][i] * model.deltas[l][j];
+            // backpropagation of semi gradient (from before last to second layer)
+            for l in (1..(model.nb_layers + 1) as usize).rev() {
+                for i in 1..(model.layers[l - 1] + 1) as usize {
+
+                    // weighted sum calculation
+                    let mut total: f64 = 0.;
+                    for j in 1..(model.layers[l] + 1) as usize {
+                        total += model.weights[l][i][j] * model.deltas[l][j];
+                    }
+
+                    let semi_gradient = total * (1. - model.inputs[l - 1][i].powi(2));
+                    model.deltas[l - 1][i] = semi_gradient;
                 }
             }
+
+            // update weights using learning rate, inputs and semi_gradients
+            for l in 1..(model.nb_layers + 1) as usize {
+                for i in 0..(model.layers[l - 1] + 1) as usize {
+                    for j in 0..(model.layers[l] + 1) as usize {
+                        model.weights[l][i][j] -= model.learning_rate * model.inputs[l - 1][i] * model.deltas[l][j];
+                    }
+                }
+            }
+            // println!("epoch : {:05} - iter: {:07}", epoch, i);
+            let message = format!("epoch : {:05} - iter: {:07}", epoch, i);
+            update_page(&message);
+            JsFuture::from(Promise::resolve(&JsValue::UNDEFINED)).await?;
         }
-        println!("epoch : {:05} - iter: {:07}", epoch, i);
-    }
+        Ok(JsValue::UNDEFINED)
+    })
 }
 
 

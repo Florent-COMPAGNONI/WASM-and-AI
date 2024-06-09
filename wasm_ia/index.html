@@ -39,11 +39,11 @@
 
         // run();
 
-        import init, { run_loop_async } from './pkg/wasm_ia.js';
+        import init, { run_loop } from './pkg/wasm_ia.js';
 
         async function run() {
             await init();
-            await run_loop_async(100, 10);
+            await run_loop(1000, 10);
         }
 
         run();
