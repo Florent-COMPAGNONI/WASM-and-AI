@@ -1,4 +1,3 @@
-<!-- static/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,35 +10,9 @@
     <div id="output"></div>
     <script type="module">
         console.log('Loading WASM module...');
-        import init, { create_mlp, predict_mlp, train_mlp } from './pkg/wasm_ia.js';
 
-        async function run() {
-            await init();
+        import init, { create_mlp, train_mlp } from './pkg/wasm_ia.js';
 
-            let layers = [2, 3, 1];
-            let model = create_mlp(layers);
-
-            let inputs = [
-                [0.0, 0.0],
-                [0.0, 1.0],
-                [1.0, 0.0],
-                [1.0, 1.0]
-            ];
-
-            let expected_outputs = [
-                [0.0],
-                [1.0],
-                [1.0],
-                [0.0]
-            ];
-
-            console.log(await predict_mlp(model, inputs[0], 1));
-            model = await train_mlp(model, inputs, expected_outputs, 1, 0.1, 5000);
-        }
-
-
-
-        // Redirect update_page to a function
         window.update_page = (message) => {
             const output = document.getElementById('output');
             const p = document.createElement('p');
@@ -47,17 +20,31 @@
             output.appendChild(p);
         };
 
-        document.addEventListener('DOMContentLoaded', (event) => {
-            window.update_loss = (epoch, iter, loss) => {
-                const output = document.getElementById('output');
-                const p = document.createElement('p');
-                p.textContent = `Epoch: ${epoch}, Iteration: ${iter}, Loss: ${loss}`;
-                output.appendChild(p);
-                console.log(p.textContent)
-            };
+        async function run() {
+            await init();
+            let model = create_mlp([2, 3, 1]);
+            let inputs = [
+                [0.0, 0.0],
+                [0.0, 1.0],
+                [1.0, 0.0],
+                [1.0, 1.0]
+            ];
+            let outputs = [
+                [0.0],
+                [1.0],
+                [1.0],
+                [0.0]
+            ];
 
-            run();
-        });
+            let is_classification = 1;
+            let learning_rate = 0.1;
+            let nb_iter = 1_000_000;
+            let step = 10; // Send updates every 10 steps
+
+            await train_mlp(model, inputs, outputs, is_classification, learning_rate, nb_iter, step);
+        }
+
+        run();
     </script>
 </body>
 </html>
