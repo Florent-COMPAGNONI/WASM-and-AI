@@ -3,48 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WASM Linear Regression</title>
+    <title>WASM Multi Layer Perceptron</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        canvas {
+            max-width: 800px;
+            height: 400px;
+            margin: 0 auto;
+        }
+        form {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            background-color: #f9f9f9;
+        }
+        form div {
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Linear Regression with WASM</h1>
+    <h1>Multi Layer Perceptron training with WASM</h1>
     <div id="output"></div>
+    <canvas id="lossChart"></canvas>
+
+    <form id="trainingForm">
+        <div>
+            <label for="is_classification">Is Classification:</label>
+            <input type="checkbox" id="is_classification" name="is_classification" checked>
+        </div>
+        <div>
+            <label for="learning_rate">Learning Rate:</label>
+            <input type="number" step="0.01" id="learning_rate" name="learning_rate" value="0.1" required>
+        </div>
+        <div>
+            <label for="nb_iter">Number of Iterations:</label>
+            <input type="number" id="nb_iter" name="nb_iter" value="1000" required>
+        </div>
+        <div>
+            <label for="layers">Layers (comma separated):</label>
+            <input type="text" id="layers" name="layers" value="2,3,1" required>
+        </div>
+        <button type="submit">Start Training</button>
+    </form>
+
     <script type="module">
         console.log('Loading WASM module...');
 
         import init, { create_mlp, train_mlp } from './pkg/wasm_ia.js';
 
+        const ctx = document.getElementById('lossChart').getContext('2d');
+        const lossChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Loss',
+                    data: [],
+                    fill: false,
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Iteration'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Loss'
+                        }
+                    }
+                }
+            }
+        });
+
         window.update_page = (message) => {
-            const output = document.getElementById('output');
-            const p = document.createElement('p');
-            p.textContent = message;
-            output.appendChild(p);
+            // Assuming the message is in the format "iteration: loss"
+            const [iteration, loss] = message.split(':').map(str => str.trim());
+            lossChart.data.labels.push(iteration);
+            lossChart.data.datasets[0].data.push(parseFloat(loss));
+            lossChart.update();
         };
 
-        async function run() {
+        async function run(is_classification, learning_rate, nb_iter, layers) {
             await init();
-            let model = create_mlp([2, 3, 1]);
+            let model = create_mlp(layers);
             let inputs = [
-                [0.0, 0.0],
-                [0.0, 1.0],
-                [1.0, 0.0],
-                [1.0, 1.0]
+                [1.0, 1.0],
+                [2.0, 3.0],
+                [3.0, 3.0],
             ];
             let outputs = [
-                [0.0],
                 [1.0],
-                [1.0],
-                [0.0]
+                [-1.0],
+                [-1.0],
             ];
 
-            let is_classification = 1;
-            let learning_rate = 0.1;
-            let nb_iter = 1_000_000;
+
             let step = 10; // Send updates every 10 steps
 
             await train_mlp(model, inputs, outputs, is_classification, learning_rate, nb_iter, step);
         }
 
-        run();
+        document.getElementById('trainingForm').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const is_classification = document.getElementById('is_classification').checked ? 1 : 0;
+            const learning_rate = parseFloat(document.getElementById('learning_rate').value);
+            const nb_iter = parseInt(document.getElementById('nb_iter').value);
+            const layers = document.getElementById('layers').value.split(',').map(Number);
+            run(is_classification, learning_rate, nb_iter, layers);
+        });
     </script>
 </body>
 </html>

@@ -1,16 +1,11 @@
 use rand::Rng;
-use std::io::Write;
-use std::fs::File;
-use chrono::{DateTime, Datelike, Local, TimeDelta, Timelike};
 use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::{from_value, to_value};
-use wasm_bindgen_futures::{future_to_promise, JsFuture};
+use wasm_bindgen_futures::future_to_promise;
 use wasm_bindgen_futures::js_sys::Promise;
 use std::time::Duration;
 use async_std::task;
-use timer::Timer;
-
 
 #[wasm_bindgen]
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,7 +15,6 @@ pub struct MLP {
     weights: Vec<Vec<Vec<f64>>>,
     deltas: Vec<Vec<f64>>,
     inputs: Vec<Vec<f64>>,
-    logs: Vec<Vec<f64>>,
     learning_rate: f64,
     nb_iter: i32,
 }
@@ -87,7 +81,6 @@ pub fn create_mlp(layers_js: JsValue) -> JsValue {
         weights,
         deltas,
         inputs,
-        logs: Vec::new(),
         learning_rate: 0.,
         nb_iter: 0,
     };
@@ -142,7 +135,7 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
         model.learning_rate = learning_rate;
         model.nb_iter = nb_iter;
 
-        model.logs = Vec::new();
+        let mut errors: Vec<f64> = Vec::<f64>::new();
 
         for i in 0..model.nb_iter {
             let mut rng = rand::thread_rng();
@@ -151,10 +144,17 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             let sample_input: &Vec<f64> = &inputs[random_index];
             let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
-            let current_error: Vec<f64> = from_value(predict_mlp(to_value(&model).map_err(|e| JsValue::from_str(&format!("Error converting model: {:?}", e)))?, to_value(sample_input).map_err(|e| JsValue::from_str(&format!("Error converting sample input: {:?}", e)))?, is_classification)).map_err(|e| JsValue::from_str(&format!("Error predicting: {:?}", e)))?;
+            let current_output: Vec<f64> = from_value(predict_mlp(
+                to_value(&model).map_err(|e| JsValue::from_str(&format!("Error converting model: {:?}", e)))?, 
+                to_value(sample_input).map_err(|e| JsValue::from_str(&format!("Error converting sample input: {:?}", e)))?, 
+                is_classification)).map_err(|e| JsValue::from_str(&format!("Error predicting: {:?}", e)
+            ))?;
 
-            model.logs.push(current_error.clone());
-            model.logs.push((*sample_expected_output.clone()).to_owned());
+            let mut current_error: Vec<f64> = vec![0.0; sample_expected_output.len()];
+            for (j, &output) in current_output.iter().enumerate() {
+                current_error[j] = output - sample_expected_output[j];
+            }
+
 
             for j in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
                 let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][j] - sample_expected_output[j - 1];
@@ -185,12 +185,14 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
                 }
             }
 
-            if i % step == 0 && i != 0 {
-                let loss = current_error.iter().map(|&e| e * e).sum::<f64>() / current_error.len() as f64;
-                let message = format!("Iter: {:07}, Loss: {:.6}", i, loss);
+            errors.extend_from_slice(&current_error);
+
+            if (i + 1) % step == 0 {
+                let mse = calculate_mse(&errors);
+                let message = format!("{:07}:{:.6}", i+1, mse);
                 update_page(&message);
 
-                task::sleep(Duration::from_nanos(1)).await; // Wait for 2 seconds
+                task::sleep(Duration::from_nanos(1)).await;
             }
         }
         Ok(JsValue::UNDEFINED)
@@ -198,166 +200,7 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 }
 
 
-
-fn serialize_logs(model: &mut MLP, epoch: i32) {
-
-    let path: String = format!("train_loss_epoch_{}.csv", epoch);
-
-    let mut output: File = File::create(path).expect("failed to create file");
-
-    for log in &model.logs {
-        for val in log {
-            write!(output, "{};", format!("{:?}", val)).expect("failed to write");
-        }
-        writeln!(output, "").expect("failed to write");
-    }
-}
-
-
-fn format_model_infos(model: &MLP) -> String {
-
-    let mut infos: String = "layers;".to_owned();
-
-    for layer in &model.layers {
-        infos.push_str(&format!("{};", layer));
-    }
-    infos.push_str(&format!("learning_rate;{};", model.learning_rate));
-    infos.push_str(&format!("nb_iter;{};\n", model.nb_iter));
-
-    return infos;
-}
-
-
-fn serialize_model(model: &MLP) {
-
-    let now: DateTime<Local> = Local::now();
-
-    let path: String = format!(
-        "model_{:02}_{:02}_{:04}_{:02}h{:02}.csv",
-        now.day(),
-        now.month(),
-        now.year(),
-        now.hour(),
-        now.minute(),
-    );
-
-    let mut output: File = File::create(path).expect("failed to create file");
-
-    let model_infos: String = format_model_infos(model);
-
-    write!(output, "{}", model_infos).expect("failed to write");
-
-    for layer in &model.weights {
-        for neurons in layer {
-            for weight in neurons {
-                write!(output, "{};", weight).expect("failed to write");
-            }
-            writeln!(output, "").expect("failed to write");
-        }
-    }
-}
-
-
-fn display_mlp(model: &MLP) {
-
-    println!("nb of layer: {}\n", model.nb_layers);
-
-    println!("layers : \n{:?}\n", model.layers);
-
-    println!("weights: \n{:?}\n", model.weights);
-
-    // println!("deltas: \n{:?}\n", model.deltas);
-
-    println!("inputs: \n{:?}\n", model.inputs);
-
-    // println!("logs: \n{:?}\n", model.logs);
-}
-
-
-
-
-
-#[cfg(test)]
-mod tests {
-    use crate::mlp::{create_mlp, predict_mlp, train_mlp};
-
-    // use std::collections::HashMap;
-    // use chrono::{Datelike, Local, Timelike, Utc};
-
-    // #[test]
-    // fn it_works() {
-    //     assert_eq!(2+2, 4);
-    // }
-
-
-    // #[test]
-    // fn slice_to_matrix() {
-
-    //     let a = vec![1, 2, 3];
-    //     let b = vec![4, 5, 6];
-    //     let c = vec![7, 8, 9];
-    //     let mut a2: Vec<Vec<i32>> = Vec::new();
-    //     a2.push(a);
-    //     a2.push(b);
-    //     a2.push(c);
-
-    //     let a2_bis = &[1.,2.,3.,4.,5.,6.,7.,8.,9.];
-
-    //     // assert_eq!(a2, array_to_matrix(a2_bis, 3));
-    // }
-
-    // #[test]
-    // fn test_hashmap() {
-    //     let mut logs: HashMap<i32, f64> = HashMap::<i32, f64>::new();
-
-    //     logs.insert(1, 5.);
-    //     logs.insert(2, 5.);
-    //     logs.insert(3, 5.);
-    //     logs.insert(4, 5.);
-    //     logs.insert(5, 5.);
-    //     logs.insert(6, 5.);
-    //     logs.insert(1, 5.);
-
-    //     dbg!(logs);
-    // }
-
-
-    // #[test]
-    // fn test_file_name() {
-    //     let now = Local::now();
-
-    //     // _lr_{}_ly_{}_{}
-    //     println!("{:02}_{:02}_{:04}_{:02}h{:02}_{}",
-    //         now.day(),
-    //         now.month(),
-    //         now.year(),
-    //         now.hour(),
-    //         now.minute(),
-    //         0.2
-    //     );
-    // }
-
-    // #[test]
-    // fn test_mlp() {
-    //     let layers = vec![2, 3, 1];
-    //     let mut model = create_mlp(&layers);
-
-    //     let inputs = vec![
-    //         vec![0., 0.],
-    //         vec![0., 1.],
-    //         vec![1., 0.],
-    //         vec![1., 1.],
-    //     ];
-
-    //     let expected_outputs = vec![
-    //         vec![0.],
-    //         vec![1.],
-    //         vec![1.],
-    //         vec![0.],
-    //     ];
-
-    //     dbg!("{:?}",predict_mlp(&mut model, &inputs[0], 1)); 
-    //     train_mlp(&mut model, &inputs, &expected_outputs, 1, 0.1, 1000, 0);
-
-    // }
+fn calculate_mse(errors: &[f64]) -> f64 {
+    let sum_of_squares: f64 = errors.iter().map(|&e| e.powi(2)).sum();
+    sum_of_squares / errors.len() as f64
 }
