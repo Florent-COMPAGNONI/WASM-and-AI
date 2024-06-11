@@ -7,6 +7,14 @@ use wasm_bindgen_futures::js_sys::Promise;
 use std::time::Duration;
 use async_std::task;
 
+
+#[wasm_bindgen]
+extern {
+    // external JS function
+    fn update_page(message: &str);
+}
+
+
 #[wasm_bindgen]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MLP {
@@ -95,6 +103,14 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
     let mut model: MLP = from_value(model_js).unwrap();
     let sample_input: Vec<f64> = from_value(sample_input_js).unwrap();
 
+    let prediction: Vec<f64> = predict_mlp_internal(&mut model, &sample_input, is_classification);
+
+    return to_value(&prediction).unwrap()
+}
+
+
+pub fn predict_mlp_internal(model: &mut MLP, sample_input: &Vec<f64>, is_classification: i32) -> Vec<f64>{
+
     // entry layer = input
     for i in 0..model.layers[0] as usize {
         model.inputs[0][i+1] = sample_input[i];
@@ -115,13 +131,7 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
             model.inputs[l][j] = total;
         }
     }
-    return to_value(&model.inputs[(model.nb_layers) as usize][1..].to_vec()).unwrap()
-}
-
-
-#[wasm_bindgen]
-extern {
-    fn update_page(message: &str);
+    return model.inputs[(model.nb_layers) as usize][1..].to_vec()
 }
 
 
@@ -137,6 +147,8 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 
         let mut errors: Vec<f64> = Vec::<f64>::new();
 
+        // let mut losses: Vec<f64> = Vec::<f64>::new();
+
         for i in 0..model.nb_iter {
             let mut rng = rand::thread_rng();
             let random_index = rng.gen_range(0..inputs.len());
@@ -144,16 +156,17 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             let sample_input: &Vec<f64> = &inputs[random_index];
             let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
-            let current_output: Vec<f64> = from_value(predict_mlp(
-                to_value(&model).map_err(|e| JsValue::from_str(&format!("Error converting model: {:?}", e)))?, 
-                to_value(sample_input).map_err(|e| JsValue::from_str(&format!("Error converting sample input: {:?}", e)))?, 
-                is_classification)).map_err(|e| JsValue::from_str(&format!("Error predicting: {:?}", e)
-            ))?;
+            let current_output: Vec<f64> = predict_mlp_internal(&mut model, &sample_input, is_classification);
 
             let mut current_error: Vec<f64> = vec![0.0; sample_expected_output.len()];
             for (j, &output) in current_output.iter().enumerate() {
                 current_error[j] = output - sample_expected_output[j];
             }
+
+
+            // Calculate cross-entropy loss
+            let loss = cross_entropy_loss(&current_output, sample_expected_output);
+            // losses.push(loss);
 
 
             for j in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
@@ -190,7 +203,12 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             if (i + 1) % step == 0 {
                 let mse = calculate_mse(&errors);
                 let message = format!("{:07}:{:.6}", i+1, mse);
+
+                // let avg_loss: f64 = losses.iter().sum::<f64>() / losses.len() as f64;
+                // let message = format!("{:07}:{:.6}", i+1, avg_loss);
                 update_page(&message);
+                // losses.clear();
+                errors.clear();
 
                 task::sleep(Duration::from_nanos(1)).await;
             }
@@ -203,4 +221,26 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 fn calculate_mse(errors: &[f64]) -> f64 {
     let sum_of_squares: f64 = errors.iter().map(|&e| e.powi(2)).sum();
     sum_of_squares / errors.len() as f64
+}
+
+use std::f64::EPSILON;
+
+/// Computes the softmax of a vector.
+fn softmax(output: &Vec<f64>) -> Vec<f64> {
+    let max = output.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let exps: Vec<f64> = output.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    exps.iter().map(|&x| x / sum).collect()
+}
+
+/// Computes the cross-entropy loss between the predicted and expected outputs.
+fn cross_entropy_loss(predicted: &Vec<f64>, expected: &Vec<f64>) -> f64 {
+    // Apply softmax to the predicted output
+    let softmax_output = softmax(predicted);
+
+    // Calculate cross-entropy loss
+    expected.iter()
+        .zip(softmax_output.iter())
+        .map(|(&exp, &pred)| -exp * (pred + EPSILON).ln())
+        .sum()
 }
