@@ -149,24 +149,19 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 
         // let mut losses: Vec<f64> = Vec::<f64>::new();
 
-        for i in 0..model.nb_iter {
+        for current in 0..model.nb_iter {
             let mut rng = rand::thread_rng();
             let random_index = rng.gen_range(0..inputs.len());
 
             let sample_input: &Vec<f64> = &inputs[random_index];
             let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
-            let current_output: Vec<f64> = predict_mlp_internal(&mut model, &sample_input, is_classification);
+            let current_output: Vec<f64> = predict_mlp_internal(&mut model, sample_input, is_classification);
 
             let mut current_error: Vec<f64> = vec![0.0; sample_expected_output.len()];
             for (j, &output) in current_output.iter().enumerate() {
                 current_error[j] = output - sample_expected_output[j];
             }
-
-
-            // Calculate cross-entropy loss
-            let loss = cross_entropy_loss(&current_output, sample_expected_output);
-            // losses.push(loss);
 
 
             for j in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
@@ -179,35 +174,31 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             }
 
             for l in (1..(model.nb_layers + 1) as usize).rev() {
-                for j in 1..(model.layers[l - 1] + 1) as usize {
+                for i in 1..(model.layers[l - 1] + 1) as usize {
                     let mut total: f64 = 0.;
-                    for k in 1..(model.layers[l] + 1) as usize {
-                        total += model.weights[l][j][k] * model.deltas[l][k];
+                    for j in 1..(model.layers[l] + 1) as usize {
+                        total += model.weights[l][i][j] * model.deltas[l][j];
                     }
 
-                    let semi_gradient = total * (1. - model.inputs[l - 1][j].powi(2));
-                    model.deltas[l - 1][j] = semi_gradient;
+                    let semi_gradient = total * (1. - model.inputs[l - 1][i].powi(2));
+                    model.deltas[l - 1][i] = semi_gradient;
                 }
             }
 
             for l in 1..(model.nb_layers + 1) as usize {
-                for j in 0..(model.layers[l - 1] + 1) as usize {
-                    for k in 0..(model.layers[l] + 1) as usize {
-                        model.weights[l][j][k] -= model.learning_rate * model.inputs[l - 1][j] * model.deltas[l][k];
+                for i in 0..(model.layers[l - 1] + 1) as usize {
+                    for j in 0..(model.layers[l] + 1) as usize {
+                        model.weights[l][i][j] -= model.learning_rate * model.inputs[l - 1][i] * model.deltas[l][j];
                     }
                 }
             }
 
             errors.extend_from_slice(&current_error);
 
-            if (i + 1) % step == 0 {
+            if (current + 1) % step == 0 {
                 let mse = calculate_mse(&errors);
-                let message = format!("{:07}:{:.6}", i+1, mse);
-
-                // let avg_loss: f64 = losses.iter().sum::<f64>() / losses.len() as f64;
-                // let message = format!("{:07}:{:.6}", i+1, avg_loss);
+                let message = format!("{:07}:{:.6}", current+1, mse);
                 update_page(&message);
-                // losses.clear();
                 errors.clear();
 
                 task::sleep(Duration::from_nanos(1)).await;
@@ -221,26 +212,4 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 fn calculate_mse(errors: &[f64]) -> f64 {
     let sum_of_squares: f64 = errors.iter().map(|&e| e.powi(2)).sum();
     sum_of_squares / errors.len() as f64
-}
-
-use std::f64::EPSILON;
-
-/// Computes the softmax of a vector.
-fn softmax(output: &Vec<f64>) -> Vec<f64> {
-    let max = output.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let exps: Vec<f64> = output.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f64 = exps.iter().sum();
-    exps.iter().map(|&x| x / sum).collect()
-}
-
-/// Computes the cross-entropy loss between the predicted and expected outputs.
-fn cross_entropy_loss(predicted: &Vec<f64>, expected: &Vec<f64>) -> f64 {
-    // Apply softmax to the predicted output
-    let softmax_output = softmax(predicted);
-
-    // Calculate cross-entropy loss
-    expected.iter()
-        .zip(softmax_output.iter())
-        .map(|(&exp, &pred)| -exp * (pred + EPSILON).ln())
-        .sum()
 }
