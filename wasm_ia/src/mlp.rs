@@ -7,12 +7,14 @@ use wasm_bindgen_futures::js_sys::Promise;
 use std::time::Duration;
 use async_std::task;
 
-use log::Level;
 
 #[wasm_bindgen]
 extern {
     // external JS function
     fn update_page(message: &str);
+
+    #[wasm_bindgen(js_namespace = Object)]
+    fn assign(target: &JsValue, source: &JsValue);
 }
 
 
@@ -99,7 +101,7 @@ pub fn create_mlp(layers_js: JsValue) -> JsValue {
 
 
 #[wasm_bindgen]
-pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classification: i32) -> JsValue{
+pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue) -> JsValue{
 
     
     
@@ -109,7 +111,7 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
 
     // log::info!("sample_input: {:?}", sample_input);
 
-    let prediction: Vec<f64> = predict_mlp_internal(&mut model, &sample_input, is_classification);
+    let prediction: Vec<f64> = predict_mlp_internal(&mut model, &sample_input);
 
     // log::info!("prediction: {:?}", prediction);
 
@@ -117,7 +119,7 @@ pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classificatio
 }
 
 
-pub fn predict_mlp_internal(model: &mut MLP, sample_input: &Vec<f64>, is_classification: i32) -> Vec<f64>{
+pub fn predict_mlp_internal(model: &mut MLP, sample_input: &Vec<f64>) -> Vec<f64>{
 
     // entry layer = input
     for i in 0..model.layers[0] as usize {
@@ -132,10 +134,9 @@ pub fn predict_mlp_internal(model: &mut MLP, sample_input: &Vec<f64>, is_classif
             for i in 0..(model.layers[l - 1] + 1) as usize {
                 total += model.weights[l][i][j] * model.inputs[l-1][i];
             }
-            // use hyperbolic tangent excepted for the output of regression case
-            if l < model.nb_layers as usize || is_classification == 1 {
-                total = total.tanh();
-            }
+            // use hyperbolic tangent
+            total = total.tanh();
+
             model.inputs[l][j] = total;
         }
     }
@@ -144,9 +145,9 @@ pub fn predict_mlp_internal(model: &mut MLP, sample_input: &Vec<f64>, is_classif
 
 
 #[wasm_bindgen]
-pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsValue, is_classification: i32, learning_rate: f64, nb_iter: i32, step: i32) -> Promise {
+pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsValue, learning_rate: f64, nb_iter: i32, step: i32) -> Promise {
     future_to_promise(async move {
-        let mut model: MLP = from_value(model_js).map_err(|e| JsValue::from_str(&format!("Error parsing model: {:?}", e)))?;
+        let mut model: MLP = from_value(model_js.clone()).map_err(|e| JsValue::from_str(&format!("Error parsing model: {:?}", e)))?;
         let inputs: Vec<Vec<f64>> = from_value(inputs_js).map_err(|e| JsValue::from_str(&format!("Error parsing inputs: {:?}", e)))?;
         let expected_outputs: Vec<Vec<f64>> = from_value(expected_outputs_js).map_err(|e| JsValue::from_str(&format!("Error parsing expected outputs: {:?}", e)))?;
 
@@ -155,8 +156,6 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 
         let mut errors: Vec<f64> = Vec::<f64>::new();
 
-        // let mut losses: Vec<f64> = Vec::<f64>::new();
-
         for current in 0..model.nb_iter {
             let mut rng = rand::thread_rng();
             let random_index = rng.gen_range(0..inputs.len());
@@ -164,7 +163,7 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             let sample_input: &Vec<f64> = &inputs[random_index];
             let sample_expected_output: &Vec<f64> = &expected_outputs[random_index];
 
-            let current_output: Vec<f64> = predict_mlp_internal(&mut model, sample_input, is_classification);
+            let current_output: Vec<f64> = predict_mlp_internal(&mut model, sample_input);
 
             let mut current_error: Vec<f64> = vec![0.0; sample_expected_output.len()];
             for (j, &output) in current_output.iter().enumerate() {
@@ -175,9 +174,8 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
             for j in 1..(model.layers[(model.nb_layers) as usize] + 1) as usize {
                 let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][j] - sample_expected_output[j - 1];
 
-                if is_classification == 1 {
-                    semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][j].powi(2);
-                }
+                semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][j].powi(2);
+                
                 model.deltas[(model.nb_layers) as usize][j] = semi_gradient;
             }
 
@@ -203,18 +201,9 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 
             errors.extend_from_slice(&current_error);
 
-            if (current + 1) % step == 0 {
+            if (current + 1) % step == 0 || current == 0 {
                 let mse = calculate_mse(&errors);
-                let message;
-                if current == 9900-1 {
-                    let p1 = predict_mlp_internal(&mut model, &vec![1.0, 1.0], is_classification);
-                    let p2 = predict_mlp_internal(&mut model, &vec![3.0, 3.0], is_classification);
-
-                    message = format!("{:07}:{:.6}#{}", current+1, mse, display_mlp(&model));
-                }
-                else {
-                    message = format!("{:07}:{:.6}#{} {}", current+1, mse, model.learning_rate, model.nb_iter);
-                }
+                let message = format!("{}:{:.6}", current+1, mse);
 
                 update_page(&message);
                 errors.clear();
@@ -222,6 +211,9 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
                 task::sleep(Duration::from_nanos(1)).await;
             }
         }
+        // update js model
+        let updated_model_js = to_value(&model).map_err(|e| JsValue::from_str(&format!("Error serializing model: {:?}", e)))?;
+        assign(&model_js, &updated_model_js);
         Ok(JsValue::UNDEFINED)
     })
 }
@@ -230,12 +222,4 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 fn calculate_mse(errors: &[f64]) -> f64 {
     let sum_of_squares: f64 = errors.iter().map(|&e| e.powi(2)).sum();
     sum_of_squares / errors.len() as f64
-}
-
-
-
-fn display_mlp(model: &MLP) -> String {
-
-    return format!("nb of layer: {}\n layers : \n{:?}\n weights: \n{:?}\n inputs: \n{:?}\n", 
-    model.nb_layers, model.layers,  model.weights, model.inputs);
 }
