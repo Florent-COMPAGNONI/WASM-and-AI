@@ -7,6 +7,7 @@ use wasm_bindgen_futures::js_sys::Promise;
 use std::time::Duration;
 use async_std::task;
 
+use log::Level;
 
 #[wasm_bindgen]
 extern {
@@ -100,10 +101,17 @@ pub fn create_mlp(layers_js: JsValue) -> JsValue {
 #[wasm_bindgen]
 pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue, is_classification: i32) -> JsValue{
 
+    
+    
+    
     let mut model: MLP = from_value(model_js).unwrap();
     let sample_input: Vec<f64> = from_value(sample_input_js).unwrap();
 
+    // log::info!("sample_input: {:?}", sample_input);
+
     let prediction: Vec<f64> = predict_mlp_internal(&mut model, &sample_input, is_classification);
+
+    // log::info!("prediction: {:?}", prediction);
 
     return to_value(&prediction).unwrap()
 }
@@ -197,7 +205,17 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 
             if (current + 1) % step == 0 {
                 let mse = calculate_mse(&errors);
-                let message = format!("{:07}:{:.6}", current+1, mse);
+                let message;
+                if current == 9900-1 {
+                    let p1 = predict_mlp_internal(&mut model, &vec![1.0, 1.0], is_classification);
+                    let p2 = predict_mlp_internal(&mut model, &vec![3.0, 3.0], is_classification);
+
+                    message = format!("{:07}:{:.6}#{}", current+1, mse, display_mlp(&model));
+                }
+                else {
+                    message = format!("{:07}:{:.6}#{} {}", current+1, mse, model.learning_rate, model.nb_iter);
+                }
+
                 update_page(&message);
                 errors.clear();
 
@@ -212,4 +230,12 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
 fn calculate_mse(errors: &[f64]) -> f64 {
     let sum_of_squares: f64 = errors.iter().map(|&e| e.powi(2)).sum();
     sum_of_squares / errors.len() as f64
+}
+
+
+
+fn display_mlp(model: &MLP) -> String {
+
+    return format!("nb of layer: {}\n layers : \n{:?}\n weights: \n{:?}\n inputs: \n{:?}\n", 
+    model.nb_layers, model.layers,  model.weights, model.inputs);
 }

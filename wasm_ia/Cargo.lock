@@ -238,6 +238,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_log"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e89f72f65e8501878b8a004d5a1afb780987e2ce2b4532c562e367a72c57499f"
+dependencies = [
+ "log",
+ "web-sys",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -869,8 +879,10 @@ version = "0.1.0"
 dependencies = [
  "async-std",
  "chrono",
+ "console_log",
  "getrandom",
  "linreg",
+ "log",
  "rand",
  "serde",
  "serde-wasm-bindgen",

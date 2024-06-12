@@ -56,14 +56,25 @@
     <script type="module">
         import init, { create_mlp, train_mlp, predict_mlp } from './pkg/wasm_ia.js';
 
-        let X = Array.from({ length: 500 }, () => [
-            Math.random() * 2 - 1,
-            Math.random() * 2 - 1
-        ]);
+        // let X = Array.from({ length: 500 }, () => [
+        //     Math.random() * 2 - 1,
+        //     Math.random() * 2 - 1
+        // ]);
 
 
         // Creating Y array based on the condition
-        let Y = X.map(p => [(Math.abs(p[0]) <= 0.3 || Math.abs(p[1]) <= 0.3) ? 1 : -1]);
+        // let Y = X.map(p => [(Math.abs(p[0]) <= 0.3 || Math.abs(p[1]) <= 0.3) ? 1 : -1]);
+
+        let X = [
+            [1, 1],
+            [2, 3],
+            [3, 3]
+        ]
+        let Y = [
+            [1],
+            [-1],
+            [-1]
+        ]
 
         // let data = {
         //     datasets: [
@@ -107,8 +118,6 @@
         // });
 
 
-
-
         const ctx = document.getElementById('lossChart').getContext('2d');
         const lossChart = new Chart(ctx, {
             type: 'line',
@@ -141,7 +150,13 @@
         });
 
         window.update_page = (message) => {
-            const [iteration, loss] = message.split(':').map(str => str.trim());
+            let tmp = message.split('#')
+            // console.log(tmp)
+            const [iteration, loss] = tmp[0].split(':').map(str => str.trim());
+            if (Number(iteration) == 9900) {
+                console.log(tmp)
+                console.log(tmp[1])
+            }
             lossChart.data.labels.push(iteration);
             lossChart.data.datasets[0].data.push(parseFloat(loss));
             lossChart.update();
@@ -155,9 +170,14 @@
 
             let step = 100; // Send updates every 10 steps
 
-            await train_mlp(model, X, Y, is_classification, learning_rate, nb_iter, step);
-            // console.log(predict_mlp(model, [1.0,1.0], 1));
-            print_prediction();
+            console.log(model)
+
+            await train_mlp(model, X, Y, is_classification, 0.01, 10000, step);
+            console.log(predict_mlp(model, [1.0, 1.0], 1));
+            console.log(predict_mlp(model, [3.0, 3.0], 1));
+            // print_prediction();
+
+            console.log(model)
         }
 
 
@@ -173,9 +193,9 @@
             // Predicting the class for each point in the grid
             let backgroundColors = gridPoints.map(p => predict_mlp(model, [p[0], p[1]], 1)[0] > 0 ? '#5787f6' : '#fcaf9e');
 
-            console.log(predict_mlp(model, [0, 0], 1)[0])
-            console.log(predict_mlp(model, [1, 1], 1)[0])
-            console.log(backgroundColors)
+            // console.log(predict_mlp(model, [0, 0], 1)[0])
+            // console.log(predict_mlp(model, [1, 1], 1)[0])
+            // console.log(backgroundColors)
 
             // Preparing data for Chart.js
             let data_predict = {
