@@ -103,17 +103,10 @@ pub fn create_mlp(layers_js: JsValue) -> JsValue {
 #[wasm_bindgen]
 pub fn predict_mlp(model_js: JsValue, sample_input_js: JsValue) -> JsValue{
 
-    
-    
-    
     let mut model: MLP = from_value(model_js).unwrap();
     let sample_input: Vec<f64> = from_value(sample_input_js).unwrap();
 
-    // log::info!("sample_input: {:?}", sample_input);
-
     let prediction: Vec<f64> = predict_mlp_internal(&mut model, &sample_input);
-
-    // log::info!("prediction: {:?}", prediction);
 
     return to_value(&prediction).unwrap()
 }
@@ -175,7 +168,7 @@ pub fn train_mlp(model_js: JsValue, inputs_js: JsValue, expected_outputs_js: JsV
                 let mut semi_gradient: f64 = model.inputs[(model.nb_layers) as usize][j] - sample_expected_output[j - 1];
 
                 semi_gradient *= 1. - model.inputs[(model.nb_layers) as usize][j].powi(2);
-                
+
                 model.deltas[(model.nb_layers) as usize][j] = semi_gradient;
             }
 

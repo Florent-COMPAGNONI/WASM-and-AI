@@ -6,8 +6,7 @@ let X = Array.from({ length: 500 }, () => [
     Math.random() * 2 - 1
 ]);
 
-
-// Creating Y array based on the condition
+// Define labels
 let Y = X.map(p => [(Math.abs(p[0]) <= 0.3 || Math.abs(p[1]) <= 0.3) ? 1 : -1]);
 
 // Create datasets for chart
@@ -26,7 +25,7 @@ let data = {
     ]
 };
 
-// Assigning points to the respective datasets based on Y values
+// Assigning points to the chatrt datasets based on Y values
 for (let i = 0; i < X.length; i++) {
     if (Y[i][0] === 1) {
         data.datasets[0].data.push({ x: X[i][0], y: X[i][1] });
@@ -93,7 +92,7 @@ window.update_page = (message) => {
     lossChart.update();
 };
 
-// define global var model
+// Define global var model
 let model;
 
 async function run(learning_rate, nb_iter, layers) {
@@ -107,8 +106,8 @@ async function run(learning_rate, nb_iter, layers) {
     // display prediction when training is over
     print_prediction();
 }
-
-//display prediction on chart
+let chart_predict;
+// Display prediction on chart
 function print_prediction() {
 
     // define a grid of point to predict
@@ -148,7 +147,7 @@ function print_prediction() {
         }
     }
 
-    // Drawing the background
+    // Drawing the background that will be the prediction area
     const backgroundPlugin = {
         id: 'backgroundPlugin',
         beforeDraw: (chart) => {
@@ -168,9 +167,12 @@ function print_prediction() {
         }
     };
 
-    // Creating the scatter plot
-    const ctx_predict = document.getElementById('scatterPlot_predict').getContext('2d');
-    const chart_predict = new Chart(ctx_predict, {
+    // Creating the scatter plot for the prediction
+    const ctx_predict = document.getElementById('scatterPlot_predict').getContext('2d');    
+    if (chart_predict) {
+        chart_predict.destroy();
+    }
+    chart_predict = new Chart(ctx_predict, {
         type: 'scatter',
         data: data_predict,
         options: {
@@ -198,6 +200,8 @@ function print_prediction() {
 
 // Event listener to run training when form is submited
 document.getElementById('trainingForm').addEventListener('submit', (event) => {
+    lossChart.data.labels = []
+    lossChart.data.datasets[0].data = []
     event.preventDefault();
     const learning_rate = parseFloat(document.getElementById('learning_rate').value);
     const nb_iter = parseInt(document.getElementById('nb_iter').value);
