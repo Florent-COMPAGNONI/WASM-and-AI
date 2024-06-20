@@ -122,31 +122,6 @@ function print_prediction() {
     // Predicting the class for each point in the grid
     let backgroundColors = gridPoints.map(p => predict_mlp(model, [p[0], p[1]], 1)[0] > 0 ? '#5787f6' : '#fcaf9e');
 
-    // Preparing data for Chart.js
-    let data_predict = {
-        datasets: [
-            {
-                label: 'Blue Class',
-                data: [],
-                backgroundColor: 'blue'
-            },
-            {
-                label: 'Red Class',
-                data: [],
-                backgroundColor: 'red'
-            }
-        ]
-    };
-
-    // Assigning points to the respective datasets based on Y values
-    for (let i = 0; i < X.length; i++) {
-        if (Y[i][0] === 1) {
-            data_predict.datasets[0].data.push({ x: X[i][0], y: X[i][1] });
-        } else {
-            data_predict.datasets[1].data.push({ x: X[i][0], y: X[i][1] });
-        }
-    }
-
     // Drawing the background that will be the prediction area
     const backgroundPlugin = {
         id: 'backgroundPlugin',
@@ -174,7 +149,7 @@ function print_prediction() {
     }
     chart_predict = new Chart(ctx_predict, {
         type: 'scatter',
-        data: data_predict,
+        data: data,
         options: {
             plugins: {
                 filler: {
