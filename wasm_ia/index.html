@@ -51,8 +51,20 @@
 
     <canvas id="lossChart"></canvas>
 
-    <h2>Predictions</h2>
-    <canvas id="scatterPlot_predict" width="800" height="600"></canvas>
+    <div id="prediction_div" hidden>
+        <h2 id="title_predict">Predictions</h2>
+        <canvas id="scatterPlot_predict" width="800" height="600"></canvas>
+        <form id="prediction_form">
+            <p>Try your own prediction</p>
+            <label for="x">x:</label>
+            <input type="number" id="x" name="x" step="0.01" value="0" required>
+            <label for="y">y:</label>
+            <input type="number" id="y" name="y" step="0.01" value="0" required>
+            <button type="submit">Predict</button>
+            <p id="prediction_result"></p>
+        </form>
+        
+    </div>
 
     <script type="module" src="./main.js"></script>
 </body>

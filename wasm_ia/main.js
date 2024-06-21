@@ -1,4 +1,9 @@
-import init, { create_mlp, train_mlp, predict_mlp } from './pkg/wasm_ia.js';
+const { default: init, predict_mlp } = await import('./pkg/wasm_ia.js');
+await init()
+
+// Define global variables
+let model;
+let chart_predict;
 
 // Define dataset
 let X = Array.from({ length: 500 }, () => [
@@ -25,7 +30,7 @@ let data = {
     ]
 };
 
-// Assigning points to the chatrt datasets based on Y values
+// Assigning points to the chart datasets based on Y values
 for (let i = 0; i < X.length; i++) {
     if (Y[i][0] === 1) {
         data.datasets[0].data.push({ x: X[i][0], y: X[i][1] });
@@ -85,30 +90,51 @@ const lossChart = new Chart(ctx, {
 });
 
 // Function called by the Rust to update the loss chart
-window.update_page = (message) => {
+window.update_loss_chart = (message) => {
     const [iteration, loss] = message.split(':').map(str => str.trim());
     lossChart.data.labels.push(iteration);
     lossChart.data.datasets[0].data.push(parseFloat(loss));
     lossChart.update();
 };
 
-// Define global var model
-let model;
 
-async function run(learning_rate, nb_iter, layers) {
-    await init();
-    model = create_mlp(layers);
+// Function that call wasm to create & train model
+function run(learning_rate, nb_iter, layers) {
+    document.getElementById("prediction_div").hidden = true;
 
     let step = nb_iter / 30; // display only 30 loss
 
-    await train_mlp(model, X, Y, learning_rate, nb_iter, step);
+    // Create a worker to run training in parallel
+    const worker = new Worker('./worker.js');
+    worker.onmessage = function (e) {
+        const { type, data } = e.data;
+        if (type === 'progress') {
+            console.log('Received message from worker:', data);
+            update_loss_chart(data)
+        }
+        else if (type === 'updatedModel') {
+            console.log('Received updated model from worker');
+            model = data;
+            // display prediction when training is over
+            print_prediction();
+        }
+    };
 
-    // display prediction when training is over
-    print_prediction();
+    // Send message to the worker to create and train the model
+    worker.postMessage({
+        layers,
+        X,
+        Y,
+        learning_rate,
+        nb_iter,
+        step
+    });    
 }
-let chart_predict;
+
+
 // Display prediction on chart
-function print_prediction() {
+async function print_prediction() {
+    document.getElementById("prediction_div").hidden = false;
 
     // define a grid of point to predict
     const step = 0.02;
@@ -173,6 +199,7 @@ function print_prediction() {
     });
 }
 
+
 // Event listener to run training when form is submited
 document.getElementById('trainingForm').addEventListener('submit', (event) => {
     lossChart.data.labels = []
@@ -182,4 +209,23 @@ document.getElementById('trainingForm').addEventListener('submit', (event) => {
     const nb_iter = parseInt(document.getElementById('nb_iter').value);
     const layers = document.getElementById('layers').value.split(',').map(Number);
     run(learning_rate, nb_iter, layers);
+});
+
+
+// Event listener to run prediction when form is submited
+document.getElementById('prediction_form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const x = parseFloat(document.getElementById('x').value);
+    const y = parseFloat(document.getElementById('y').value);
+    const result = predict_mlp(model, [x, y])[0]
+    const percent = (((result + 1)/2) * 100).toFixed(2)
+    const prediction_result = document.getElementById('prediction_result')
+    if (result < 0) {
+        prediction_result.style.color = 'red'
+        prediction_result.innerText = `Red class at ${percent}%`
+    }
+    else {
+        prediction_result.style.color = 'blue'
+        prediction_result.innerText = `Blue class at ${percent}%`
+    }
 });
